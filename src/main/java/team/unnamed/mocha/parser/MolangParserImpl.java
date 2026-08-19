@@ -125,7 +125,10 @@ final class MolangParserImpl implements MolangParser {
                 return expr;
             case SUB:
                 lexer.next();
-                final Expression operatedExpression = parseSingle(lexer);
+                // Unary operators bind to a complete postfix expression. Without this step,
+                // `-query.foo()` is parsed as `(-query.foo)()` because calls are normally
+                // attached by parseCompoundExpression after parseSingle returns.
+                final Expression operatedExpression = parsePostfixExpression(lexer);
                 if (operatedExpression instanceof DoubleExpression) {
                     // NEGATE(A) is just parsed as (-A)
                     return new DoubleExpression(-((DoubleExpression) operatedExpression).value());
@@ -133,7 +136,7 @@ final class MolangParserImpl implements MolangParser {
                 return new UnaryExpression(UnaryExpression.Op.ARITHMETICAL_NEGATION, operatedExpression);
             case BANG:
                 lexer.next();
-                return new UnaryExpression(UnaryExpression.Op.LOGICAL_NEGATION, parseSingle(lexer));
+                return new UnaryExpression(UnaryExpression.Op.LOGICAL_NEGATION, parsePostfixExpression(lexer));
             case RETURN:
                 lexer.next();
                 return new UnaryExpression(UnaryExpression.Op.RETURN, MolangParserImpl.parseCompoundExpression(lexer, 0));
@@ -146,7 +149,7 @@ final class MolangParserImpl implements MolangParser {
             final @NotNull MolangLexer lexer,
             final int lastPrecedence
     ) throws IOException {
-        Expression expr = parseSingle(lexer);
+        Expression expr = parsePostfixExpression(lexer);
         while (true) {
             final Expression compoundExpr = parseCompound(lexer, expr, lastPrecedence);
 
@@ -163,6 +166,24 @@ final class MolangParserImpl implements MolangParser {
         }
     }
 
+    /**
+     * Parses the primary expression and all immediately-following postfix expressions.
+     *
+     * <p>Postfix expressions have higher precedence than unary operators. Keeping this phase
+     * separate from binary/ternary parsing lets {@code -foo()} mean {@code -(foo())}, while
+     * preserving the usual {@code -foo() * bar} grouping.</p>
+     */
+    static @NotNull Expression parsePostfixExpression(final @NotNull MolangLexer lexer) throws IOException {
+        Expression expression = parseSingle(lexer);
+        while (true) {
+            final TokenKind kind = lexer.current().kind();
+            if (kind != TokenKind.LBRACKET && kind != TokenKind.LPAREN) {
+                return expression;
+            }
+            expression = parsePostfix(lexer, expression);
+        }
+    }
+
     static @NotNull Expression parseCompound(
             final @NotNull MolangLexer lexer,
             final @NotNull Expression left,
@@ -174,6 +195,66 @@ final class MolangParserImpl implements MolangParser {
             case RPAREN:
             case EOF:
                 return left;
+            case QUES: {
+                // ternary precedence is the same as the conditional operator
+                final int ternaryPrecedence = BinaryExpression.Op.CONDITIONAL.precedence();
+                if (lastPrecedence >= ternaryPrecedence) {
+                    return left;
+                }
+
+                lexer.next();
+                final Expression trueValue = MolangParserImpl.parseCompoundExpression(lexer, 0);
+
+                if (lexer.current().kind() == TokenKind.COLON) {
+                    // then it's a ternary expression, since there is a ':', indicating the next expression
+                    lexer.next();
+                    return new TernaryConditionalExpression(left, trueValue, MolangParserImpl.parseCompoundExpression(lexer, ternaryPrecedence));
+                } else {
+                    return new BinaryExpression(BinaryExpression.Op.CONDITIONAL, left, trueValue);
+                }
+            }
+        }
+
+        // check for binary expressions
+        final BinaryExpression.Op op;
+
+        // @formatter:off
+        // I wish this was java 17
+        switch (current.kind()) {
+            case AMPAMP: op = BinaryExpression.Op.AND; break;
+            case BARBAR: op = BinaryExpression.Op.OR; break;
+            case LT: op = BinaryExpression.Op.LT; break;
+            case LTE: op = BinaryExpression.Op.LTE; break;
+            case GT: op = BinaryExpression.Op.GT; break;
+            case GTE: op = BinaryExpression.Op.GTE; break;
+            case PLUS: op = BinaryExpression.Op.ADD; break;
+            case SUB: op = BinaryExpression.Op.SUB; break;
+            case STAR: op = BinaryExpression.Op.MUL; break;
+            case SLASH: op = BinaryExpression.Op.DIV; break;
+            case QUESQUES: op = BinaryExpression.Op.NULL_COALESCE; break;
+            case EQ: op = BinaryExpression.Op.ASSIGN; break;
+            case EQEQ: op = BinaryExpression.Op.EQ; break;
+            case BANGEQ: op = BinaryExpression.Op.NEQ; break;
+            case ARROW: op = BinaryExpression.Op.ARROW; break;
+            default: return left;
+        }
+        // @formatter:on
+
+        final int precedence = op.precedence();
+        if (lastPrecedence >= precedence) {
+            return left;
+        }
+
+        lexer.next();
+        return new BinaryExpression(op, left, MolangParserImpl.parseCompoundExpression(lexer, precedence));
+    }
+
+    static @NotNull Expression parsePostfix(
+            final @NotNull MolangLexer lexer,
+            final @NotNull Expression left
+    ) throws IOException {
+        Token current = lexer.current();
+        switch (current.kind()) {
             case LBRACKET: { // ARRAY ACCESS EXPRESSION: "left["
                 current = lexer.next();
                 if (current.kind() == TokenKind.RBRACKET) {
@@ -227,58 +308,9 @@ final class MolangParserImpl implements MolangParser {
 
                 return new CallExpression(left, arguments);
             }
-            case QUES: {
-                // ternary precedence is the same as the conditional operator
-                final int ternaryPrecedence = BinaryExpression.Op.CONDITIONAL.precedence();
-                if (lastPrecedence >= ternaryPrecedence) {
-                    return left;
-                }
-
-                lexer.next();
-                final Expression trueValue = MolangParserImpl.parseCompoundExpression(lexer, 0);
-
-                if (lexer.current().kind() == TokenKind.COLON) {
-                    // then it's a ternary expression, since there is a ':', indicating the next expression
-                    lexer.next();
-                    return new TernaryConditionalExpression(left, trueValue, MolangParserImpl.parseCompoundExpression(lexer, ternaryPrecedence));
-                } else {
-                    return new BinaryExpression(BinaryExpression.Op.CONDITIONAL, left, trueValue);
-                }
-            }
+            default:
+                return left;
         }
-
-        // check for binary expressions
-        final BinaryExpression.Op op;
-
-        // @formatter:off
-        // I wish this was java 17
-        switch (current.kind()) {
-            case AMPAMP: op = BinaryExpression.Op.AND; break;
-            case BARBAR: op = BinaryExpression.Op.OR; break;
-            case LT: op = BinaryExpression.Op.LT; break;
-            case LTE: op = BinaryExpression.Op.LTE; break;
-            case GT: op = BinaryExpression.Op.GT; break;
-            case GTE: op = BinaryExpression.Op.GTE; break;
-            case PLUS: op = BinaryExpression.Op.ADD; break;
-            case SUB: op = BinaryExpression.Op.SUB; break;
-            case STAR: op = BinaryExpression.Op.MUL; break;
-            case SLASH: op = BinaryExpression.Op.DIV; break;
-            case QUESQUES: op = BinaryExpression.Op.NULL_COALESCE; break;
-            case EQ: op = BinaryExpression.Op.ASSIGN; break;
-            case EQEQ: op = BinaryExpression.Op.EQ; break;
-            case BANGEQ: op = BinaryExpression.Op.NEQ; break;
-            case ARROW: op = BinaryExpression.Op.ARROW; break;
-            default: return left;
-        }
-        // @formatter:on
-
-        final int precedence = op.precedence();
-        if (lastPrecedence >= precedence) {
-            return left;
-        }
-
-        lexer.next();
-        return new BinaryExpression(op, left, MolangParserImpl.parseCompoundExpression(lexer, precedence));
     }
 
     @Override

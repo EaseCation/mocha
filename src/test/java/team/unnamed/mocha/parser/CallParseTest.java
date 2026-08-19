@@ -35,6 +35,8 @@ import java.util.Arrays;
 import java.util.Collections;
 
 import static team.unnamed.mocha.MochaAssertions.assertCreateTree;
+import static team.unnamed.mocha.MochaAssertions.assertCreateSameTree;
+import static team.unnamed.mocha.MochaAssertions.assertEvaluatesAndCompiles;
 import static team.unnamed.mocha.MochaAssertions.assertParseError;
 
 class CallParseTest {
@@ -102,5 +104,28 @@ class CallParseTest {
 
         // RPAREN expected
         assertParseError("math.clamp(5;)", 13);
+    }
+
+    @Test
+    void postfix_expressions_bind_before_unary_operators() throws Exception {
+        assertCreateSameTree(
+                "-math.sin(query.anim_time * 38)",
+                "-(math.sin(query.anim_time * 38))"
+        );
+        assertCreateSameTree(
+                "-query.values[0]",
+                "-(query.values[0])"
+        );
+        assertCreateSameTree(
+                "!query.is_baby()",
+                "!(query.is_baby())"
+        );
+    }
+
+    @Test
+    void unary_postfix_expressions_keep_binary_precedence() {
+        // Mocha's standard trigonometric functions use degrees, so sin(90) is one.
+        assertEvaluatesAndCompiles(-2D, "-math.sin(90) * 2");
+        assertEvaluatesAndCompiles(3.14D, "--3.14");
     }
 }
