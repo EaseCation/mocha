@@ -82,6 +82,7 @@ class HierarchyTest {
         assertCreateSameTree("((!shy) && (!me)) || (5 > ((math.sqrt(9)) * 5))", "!shy && !me || 5 > math.sqrt(9) * 5");
         assertCreateSameTree("r00 = ((2 * ((q0 * q0) + (q1 * q1))) - 1)", "r00 = 2 * (q0 * q0 + q1 * q1) - 1");
         assertCreateSameTree("v.x = ((t.sin_x * t.sin_x) + (v.x * v.x))", "v.x = t.sin_x * t.sin_x + v.x * v.x");
+        assertCreateSameTree("v.x = (q.enabled ? 2 : 3)", "v.x = q.enabled ? 2 : 3");
         // left-to-right
         assertCreateSameTree("((12 / 2) / 2)", "12 / 2 / 2");
         assertCreateSameTree("((((1 + 2) + 3) + 4) + 5) + 6", "1 + 2 + 3 + 4 + 5 + 6");

@@ -144,7 +144,7 @@ public final class BinaryExpression implements Expression {
         ARROW(2000),
         NULL_COALESCE(2),
         ASSIGN(1),
-        CONDITIONAL(1),
+        CONDITIONAL(2),
         EQ(500),
         NEQ(500);
 
