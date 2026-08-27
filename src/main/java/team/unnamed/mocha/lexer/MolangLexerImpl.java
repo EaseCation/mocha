@@ -106,6 +106,10 @@ final class MolangLexerImpl implements MolangLexer {
                 }
             }
 
+            if (c == 'f' || c == 'F') {
+                read();
+            }
+
             return new Token(TokenKind.FLOAT, builder.toString(), start, cursor.index());
         } else if (Characters.isValidForWordStart(c)) { // [A-z_]
             // may be an identifier or a keyword
