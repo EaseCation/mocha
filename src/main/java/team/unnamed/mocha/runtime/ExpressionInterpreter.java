@@ -110,9 +110,16 @@ public final class ExpressionInterpreter<T> implements ExpressionVisitor<Value>,
                 }
                 return NumberValue.zero();
             },
-            arithmetic((a, b) -> ((a.eval() == b.eval()) ? 1.0F : 0.0F)), // eq
-            arithmetic((a, b) -> ((a.eval() != b.eval()) ? 1.0F : 0.0F))  // neq
+            (evaluator, a, b) -> Value.of(valuesEqual(a.visit(evaluator), b.visit(evaluator))),
+            (evaluator, a, b) -> Value.of(!valuesEqual(a.visit(evaluator), b.visit(evaluator)))
     );
+
+    private static boolean valuesEqual(final Value first, final Value second) {
+        if (first.isString() || second.isString()) {
+            return first.getAsString().equals(second.getAsString());
+        }
+        return first.getAsNumber() == second.getAsNumber();
+    }
 
     private final T entity;
     private final Scope scope;

@@ -154,6 +154,7 @@ public class LexerTest {
         );
         assertTokenization("array.accessing[atIndex[0]]", IDENTIFIER, DOT, IDENTIFIER, LBRACKET, IDENTIFIER, LBRACKET, FLOAT, RBRACKET, RBRACKET);
         assertTokenization("array.accessing[atIndex[0]] = 1", IDENTIFIER, DOT, IDENTIFIER, LBRACKET, IDENTIFIER, LBRACKET, FLOAT, RBRACKET, RBRACKET, EQ, FLOAT);
+        assertTokenization("0.0f <= 1F", FLOAT, LTE, FLOAT);
     }
 
 }

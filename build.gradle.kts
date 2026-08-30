@@ -1,8 +1,11 @@
+import org.cadixdev.gradle.licenser.LicenseExtension
+import org.gradle.util.GradleVersion
+
 plugins {
     `java-library`
     `maven-publish`
     signing
-    id("org.cadixdev.licenser") version "0.6.1"
+    id("org.cadixdev.licenser") version "0.6.1" apply false
     id("me.champeau.jmh") version "0.7.2"
 }
 
@@ -23,6 +26,7 @@ dependencies {
     compileOnlyApi("org.jetbrains:annotations:24.1.0")
     testImplementation("org.junit.jupiter:junit-jupiter-api:5.10.3")
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
     // performance comparison with other libraries
     jmhImplementation("com.bedrockk:molang:1.0-SNAPSHOT")
@@ -50,10 +54,16 @@ tasks {
     }
 }
 
-license {
-    header.set(rootProject.resources.text.fromFile("header.txt"))
-    include("**/*.java")
-    newLine = false
+// Cadix Licenser 0.6.1 recursively instantiates its extension on Gradle 9. The plugin is
+// unmaintained, so retain upstream license checks on Gradle 8 while allowing this library to be
+// consumed by the Gradle 9 workspace composite build.
+if (GradleVersion.current() < GradleVersion.version("9.0")) {
+    apply(plugin = "org.cadixdev.licenser")
+    configure<LicenseExtension> {
+        header.set(rootProject.resources.text.fromFile("header.txt"))
+        include("**/*.java")
+        newLine = false
+    }
 }
 
 java {
