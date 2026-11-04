@@ -20,3 +20,8 @@ or functions so that they can be called from the evaluated expressions.
 
 Check the [documentation](https://unnamed.team/docs/molang) for installation, usage and
 some more information for this project
+## EaseCation interpreter runtime
+
+Version `3.0.3-ec.4` retains the parser, interpreter and standard-math fixes used by shared animation and particle consumers. `prepareEval` parses once and interprets using fresh temporary variables and current host bindings. The upstream explicit `compile` API is unchanged; it is not the game execution backend and does not gain the interpreter's expanded language coverage.
+
+There is no experimental `compileProgram` API, global program cache or program benchmark in this branch. The interpreter contract and official-language references are in [docs/molang-coverage.md](docs/molang-coverage.md).

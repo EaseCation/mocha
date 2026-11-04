@@ -34,7 +34,9 @@ class ValueOfTest {
         assertEquals(StringValue.of("hello"), Value.of("hello"));
         assertEquals(NumberValue.of(1), Value.of(true));
         assertEquals(NumberValue.zero(), Value.of(false));
-        assertEquals(NumberValue.zero(), Value.of(null));
+        assertEquals(Value.nil(), Value.of(null));
+        org.junit.jupiter.api.Assertions.assertTrue(Value.of(null).isNil());
+        org.junit.jupiter.api.Assertions.assertFalse(Value.of(0).isNil());
         assertEquals(NumberValue.zero(), Value.of(new Object()));
         assertEquals(ArrayValue.of(), Value.of(new Object[0]));
         assertEquals(ArrayValue.of(), Value.of(new int[0]));

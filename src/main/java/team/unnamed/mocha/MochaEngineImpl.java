@@ -76,18 +76,20 @@ final class MochaEngineImpl<T> implements MochaEngine<T> {
         ExpressionInterpreter<T> evaluator = new ExpressionInterpreter<>(entity, local);
         evaluator.warnOnReflectiveFunctionUsage(warnOnReflectiveFunctionUsage);
         Value lastResult = NumberValue.zero();
+        boolean returned = false;
 
         for (Expression expression : expressions) {
-            lastResult = expression.visit(evaluator);
+            lastResult = evaluator.eval(expression);
             Value returnValue = evaluator.popReturnValue();
             if (returnValue != null) {
                 lastResult = returnValue;
+                returned = true;
                 break;
             }
         }
 
         // ensure returned value is a number
-        return lastResult == null ? 0D : lastResult.getAsNumber();
+        return lastResult == null || (!returned && expressions.size() > 1) ? 0D : lastResult.getAsNumber();
     }
 
     @Override

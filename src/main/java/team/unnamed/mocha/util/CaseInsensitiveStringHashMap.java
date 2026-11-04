@@ -68,7 +68,7 @@ public class CaseInsensitiveStringHashMap<V> extends HashMap<String, V> {
 
     private static <T> T lowercase(T key) {
         //noinspection unchecked
-        return key instanceof String ? ((T) ((String) key).toLowerCase()) : key;
+        return key instanceof String ? ((T) ((String) key).toLowerCase(java.util.Locale.ROOT)) : key;
     }
 
     private static <V> Map<? extends String, ? extends V> lowercaseMap(Map<? extends String, ? extends V> m) {
@@ -81,7 +81,15 @@ public class CaseInsensitiveStringHashMap<V> extends HashMap<String, V> {
 
     @Override
     public V get(Object key) {
-        return super.get(lowercase(key));
+        // Stored keys are already normalized. Most parsed Molang identifiers hit
+        // that exact key; avoid scanning them again on every read. Null values and
+        // missing/mixed-case keys retain the original normalization fallback.
+        final V exact = super.get(key);
+        if (exact != null) {
+            return exact;
+        }
+        final Object normalized = lowercase(key);
+        return normalized == key ? null : super.get(normalized);
     }
 
     @Override
