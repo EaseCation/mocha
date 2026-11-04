@@ -31,6 +31,11 @@ import team.unnamed.mocha.runtime.value.Function;
 import team.unnamed.mocha.runtime.value.Value;
 
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
+import team.unnamed.mocha.runtime.value.NumericFunction;
 
 @ApiStatus.Internal
 public final class JavaFunction<T> implements Function<T> {
@@ -38,13 +43,51 @@ public final class JavaFunction<T> implements Function<T> {
     private final Method method;
     private final boolean pure;
     private Function<T> function;
+    private final NumericFunction numeric;
 
     JavaFunction(final @Nullable Object object, final @Nullable Method method, final @Nullable Function<T> function, final boolean pure) {
         this.object = object;
         this.method = method;
         this.function = function;
         this.pure = pure;
+        this.numeric = numericAdapter(object,method,function);
         evaluate();
+    }
+
+    /** Bound to this host function, never retained in the global program cache. */
+    public NumericFunction numeric() { return numeric; }
+
+    private static NumericFunction numericAdapter(Object receiver, Method method, Function<?> backing) {
+        if (backing != null) return backing instanceof NumericFunction ? (NumericFunction)backing : null;
+        if (method == null || method.isVarArgs() || method.getParameterCount()>3) return null;
+        for (java.lang.reflect.Parameter p : method.getParameters())
+            if (p.getType()!=double.class || p.isAnnotationPresent(Entity.class)) return null;
+        Class<?> result=method.getReturnType();
+        if (!(result==double.class || result==float.class || result==long.class || result==int.class || result==short.class || result==byte.class)) return null;
+        try {
+            MethodHandle raw=MethodHandles.lookup().unreflect(method);
+            if(!Modifier.isStatic(method.getModifiers()))raw=raw.bindTo(receiver);
+            final int arity=method.getParameterCount();
+            final MethodHandle handle=raw.asType(MethodType.methodType(double.class,method.getParameterTypes()));
+            return new NumericFunction() {
+                public int arity() { return arity; }
+                public double invoke(double a,double b,double c) {
+                    try {
+                        switch(arity) {
+                            case 0:return (double)handle.invokeExact();
+                            case 1:return (double)handle.invokeExact(a);
+                            case 2:return (double)handle.invokeExact(a,b);
+                            default:return (double)handle.invokeExact(a,b,c);
+                        }
+                    } catch (Throwable error) {
+                        // Never retry an already executed host callback through another backend.
+                        throw new RuntimeException("Molang numeric host function failed",error);
+                    }
+                }
+            };
+        } catch (IllegalAccessException | IllegalArgumentException error) {
+            return null; // Preparation-time choice; general bindings keep their original adapter.
+        }
     }
 
     private void evaluate() {

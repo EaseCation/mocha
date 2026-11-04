@@ -36,7 +36,7 @@ reader.on('line', expression => {
         const result = parser.parse(expression);
         output.write(
                 '\n' +
-                '# ' + expression + ' \n' +
+                '# ' + expression.trim() + '\n' +
                 result.toString() + '\n'
         );
     }

@@ -90,27 +90,28 @@ final class MolangLexerImpl implements MolangLexer {
         }
 
         int start = cursor.index();
-        if (Character.isDigit(c)) {
+        if (Character.isDigit(c) || c == '.') {
             StringBuilder builder = new StringBuilder(8);
-            builder.appendCodePoint(c);
-
-            // first char is a digit, continue reading number
-            while (Character.isDigit(c = read())) {
-                builder.appendCodePoint(c);
-            }
-
             if (c == '.') {
-                builder.append('.');
-                while (Character.isDigit(c = read())) {
-                    builder.appendCodePoint(c);
+                c=read();
+                if(!Character.isDigit(c)) return new Token(TokenKind.DOT,null,start,cursor.index());
+                builder.append("0.");
+                do { builder.appendCodePoint(c); c=read(); } while(Character.isDigit(c));
+            } else {
+                do { builder.appendCodePoint(c); c=read(); } while(Character.isDigit(c));
+                if(c=='.') {
+                    builder.append('.');
+                    while(Character.isDigit(c=read()))builder.appendCodePoint(c);
                 }
             }
-
-            if (c == 'f' || c == 'F') {
-                read();
+            if(c=='e'||c=='E') {
+                builder.append('e');c=read();
+                if(c=='+'||c=='-'){builder.appendCodePoint(c);c=read();}
+                if(!Character.isDigit(c))return new Token(TokenKind.ERROR,"Missing exponent digits",start,cursor.index());
+                do {builder.appendCodePoint(c);c=read();}while(Character.isDigit(c));
             }
-
-            return new Token(TokenKind.FLOAT, builder.toString(), start, cursor.index());
+            if(c=='f'||c=='F')read();
+            return new Token(TokenKind.FLOAT,builder.toString(),start,cursor.index());
         } else if (Characters.isValidForWordStart(c)) { // [A-z_]
             // may be an identifier or a keyword
             StringBuilder builder = new StringBuilder();
@@ -119,7 +120,7 @@ final class MolangLexerImpl implements MolangLexer {
             } while (Characters.isValidForWordContinuation(c = read())); // [A-z_0-9]
             String word = builder.toString();
             TokenKind kind;
-            switch (word.toLowerCase()) {
+            switch (word.toLowerCase(java.util.Locale.ROOT)) {
                 //@formatter:off
                 case "break": kind = TokenKind.BREAK; break;
                 case "continue": kind = TokenKind.CONTINUE; break;

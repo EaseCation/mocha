@@ -126,3 +126,20 @@ publishing {
 signing {
     sign(publishing.publications["maven"])
 }
+
+// Isolated internal comparison; avoids resolving the unrelated third-party JMH competitors.
+val compileProgramBenchmark by tasks.registering(JavaCompile::class) {
+    source("tools/ProgramBenchmark.java")
+    classpath = sourceSets.main.get().runtimeClasspath
+    destinationDirectory.set(layout.buildDirectory.dir("program-benchmark"))
+    sourceCompatibility = "8"
+    targetCompatibility = "8"
+}
+tasks.register<JavaExec>("programBenchmark") {
+    group = "verification"
+    description = "Compare cached AST and JVM program CPU cost (not game FPS)."
+    dependsOn(compileProgramBenchmark)
+    classpath = files(compileProgramBenchmark.flatMap { it.destinationDirectory }) + sourceSets.main.get().runtimeClasspath
+    mainClass.set("ProgramBenchmark")
+    jvmArgs("-Xms256m", "-Xmx256m")
+}

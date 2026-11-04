@@ -45,7 +45,7 @@ public final class IdentifierExpression implements Expression {
     public IdentifierExpression(final @NotNull String name) {
         Objects.requireNonNull(name, "name");
 
-        this.name = name.toLowerCase(); // case-insensitive
+        this.name = name.toLowerCase(java.util.Locale.ROOT); // case-insensitive
     }
 
     /**

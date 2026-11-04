@@ -76,18 +76,20 @@ final class MochaEngineImpl<T> implements MochaEngine<T> {
         ExpressionInterpreter<T> evaluator = new ExpressionInterpreter<>(entity, local);
         evaluator.warnOnReflectiveFunctionUsage(warnOnReflectiveFunctionUsage);
         Value lastResult = NumberValue.zero();
+        boolean returned = false;
 
         for (Expression expression : expressions) {
-            lastResult = expression.visit(evaluator);
+            lastResult = evaluator.eval(expression);
             Value returnValue = evaluator.popReturnValue();
             if (returnValue != null) {
                 lastResult = returnValue;
+                returned = true;
                 break;
             }
         }
 
         // ensure returned value is a number
-        return lastResult == null ? 0D : lastResult.getAsNumber();
+        return lastResult == null || (!returned && expressions.size()>1) ? 0D : lastResult.getAsNumber();
     }
 
     @Override
@@ -121,53 +123,12 @@ final class MochaEngineImpl<T> implements MochaEngine<T> {
         } catch (final IOException e) {
             throw new UncheckedIOException("Failed to read from given reader", e);
         }
-        return new MochaFunction() {
-            @Override
-            public double evaluate() {
-                return eval(parsed);
-            }
-
-            @Override
-            public @NotNull String toString() {
-                return "MochaPreparedFunction(" + parsed + ")";
-            }
-        };
+        return compiler.compile(parsed, MochaFunction.class);
     }
 
     @Override
     public @NotNull MochaFunction prepareEval(final @NotNull String code) {
-        final List<Expression> parsed;
-        try {
-            parsed = parse(code);
-        } catch (final ParseException e) {
-            // parse errors just output zero
-            if (parseExceptionHandler != null) {
-                parseExceptionHandler.accept(e);
-            }
-            return new MochaFunction() {
-                @Override
-                public double evaluate() {
-                    return 0D;
-                }
-
-                @Override
-                public @NotNull String toString() {
-                    return "MochaPreparedFunction('" + code + "', " + e.getMessage() + ")";
-                }
-            };
-        }
-
-        return new MochaFunction() {
-            @Override
-            public double evaluate() {
-                return eval(parsed);
-            }
-
-            @Override
-            public @NotNull String toString() {
-                return "MochaPreparedFunction(" + parsed + ")";
-            }
-        };
+        return prepareEval(new java.io.StringReader(code));
     }
 
     @Override

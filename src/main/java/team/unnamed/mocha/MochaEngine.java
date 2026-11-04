@@ -69,6 +69,12 @@ public interface MochaEngine<T> {
         });
     }
 
+    /** Shared, context-independent JVM bytecode. Evaluate with this engine's scope/entity or another host. */
+    default team.unnamed.mocha.runtime.program.Program compileProgram(String source) throws IOException {
+        return team.unnamed.mocha.runtime.program.ProgramCompiler.shared().compile(source);
+    }
+
+
     /**
      * Creates a new, clean and empty {@link MochaEngine} instance
      * with the standard, default bindings.
@@ -188,33 +194,30 @@ public interface MochaEngine<T> {
 
     /**
      * Parses the data from the given {@code reader} and
-     * returns a cached, interpretable {@link MochaFunction}.
+     * returns a cached, bytecode-backed {@link MochaFunction}.
      *
      * <pre><strong>Note that this method won't close the given
      * {@code reader}</strong></pre>
      *
-     * <p>This approach is the same as parsing to a List of
-     * expressions, caching them and then evaluating using
-     * {@link #eval(List)}, but easier, since it already keeps
-     * this {@link MochaEngine} instance.</p>
+     * <p>This compiles a context-independent JVM program and binds it to this engine.
+     * Each invocation has fresh temporary variables and reads current host bindings.</p>
      *
      * @param reader The reader to read the data from
-     * @return The cached, interpretable function
+     * @return The cached, bytecode-backed function
      * @since 3.0.0
      */
+
     @NotNull MochaFunction prepareEval(final @NotNull Reader reader);
 
     /**
      * Parses the given {@code string} and returns a cached,
-     * interpretable {@link MochaFunction}.
+     * bytecode-backed {@link MochaFunction}.
      *
-     * <p>This approach is the same as parsing to a List of
-     * expressions, caching them and then evaluating using
-     * {@link #eval(List)}, but easier, since it already keeps
-     * this {@link MochaEngine} instance.</p>
+     * <p>This compiles a context-independent JVM program and binds it to this engine.
+     * Each invocation has fresh temporary variables and reads current host bindings.</p>
      *
      * @param string The MoLang string
-     * @return The cached, interpretable function
+     * @return The cached, bytecode-backed function
      * @since 3.0.0
      */
     default @NotNull MochaFunction prepareEval(final @NotNull String string) {
