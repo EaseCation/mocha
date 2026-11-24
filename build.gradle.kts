@@ -100,6 +100,7 @@ publishing {
                 description.set(project.description)
                 url.set("https://github.com/unnamed/mocha")
                 packaging = "jar"
+                properties.set(mapOf("upstream.groupId" to "team.unnamed", "upstream.version" to "3.0.1"))
                 licenses {
                     license {
                         name.set("MIT License")
@@ -124,5 +125,7 @@ publishing {
 }
 
 signing {
+    // Releases go to the EaseCation repository unsigned; sign only when a signatory is configured.
+    isRequired = false
     sign(publishing.publications["maven"])
 }
