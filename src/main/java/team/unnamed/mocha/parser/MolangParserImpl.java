@@ -208,7 +208,7 @@ final class MolangParserImpl implements MolangParser {
                 if (lexer.current().kind() == TokenKind.COLON) {
                     // then it's a ternary expression, since there is a ':', indicating the next expression
                     lexer.next();
-                    return new TernaryConditionalExpression(left, trueValue, MolangParserImpl.parseCompoundExpression(lexer, ternaryPrecedence));
+                    return new TernaryConditionalExpression(left, trueValue, MolangParserImpl.parseCompoundExpression(lexer, ternaryPrecedence - 1));
                 } else {
                     return new BinaryExpression(BinaryExpression.Op.CONDITIONAL, left, trueValue);
                 }
@@ -246,7 +246,8 @@ final class MolangParserImpl implements MolangParser {
         }
 
         lexer.next();
-        return new BinaryExpression(op, left, MolangParserImpl.parseCompoundExpression(lexer, precedence));
+        return new BinaryExpression(op, left, MolangParserImpl.parseCompoundExpression(lexer,
+                op == BinaryExpression.Op.ASSIGN || op == BinaryExpression.Op.NULL_COALESCE ? precedence - 1 : precedence));
     }
 
     static @NotNull Expression parsePostfix(

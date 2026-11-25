@@ -66,15 +66,17 @@ public final class ExpressionInterpreter<T> implements ExpressionVisitor<Value>,
             }),
             (evaluator, a, b) -> { // arrow
                 final Value val = a.visit(evaluator);
-                if (!(val instanceof JavaValue)) {
-                    return NumberValue.zero();
-                } else {
-                    return b.visit(evaluator.createChild(((JavaValue) val).value()));
-                }
+                Object actor=RuntimeSemantics.actor(val);
+                if(actor==null)return Value.nil();
+                ExpressionInterpreter<?> child=new ExpressionInterpreter<>(actor,RuntimeSemantics.actorScope(val,evaluator.scope));
+                child.remainingIterations=evaluator.remainingIterations;
+                Value result=child.eval(b);
+                if(child.returnValue!=null)evaluator.returnValue=child.returnValue;
+                return result;
             },
             (evaluator, a, b) -> { // null coalesce
                 final Value val = a.visit(evaluator);
-                if (val.getAsBoolean()) {
+                if (!val.isNil()) {
                     return val;
                 } else {
                     return b.visit(evaluator);
@@ -89,13 +91,7 @@ public final class ExpressionInterpreter<T> implements ExpressionVisitor<Value>,
                 // but not:
                 //      x = 1
                 //      i = 2
-                if (a instanceof AccessExpression) {
-                    final AccessExpression access = (AccessExpression) a;
-                    final Value objectValue = access.object().visit(evaluator);
-                    if (objectValue instanceof MutableObjectBinding) {
-                        ((MutableObjectBinding) objectValue).set(access.property(), val);
-                    }
-                }
+                evaluator.assignTarget(a,val);
                 return val;
             },
             (evaluator, a, b) -> { // conditional
@@ -115,10 +111,7 @@ public final class ExpressionInterpreter<T> implements ExpressionVisitor<Value>,
     );
 
     private static boolean valuesEqual(final Value first, final Value second) {
-        if (first.isString() || second.isString()) {
-            return first.getAsString().equals(second.getAsString());
-        }
-        return first.getAsNumber() == second.getAsNumber();
+        return RuntimeSemantics.equal(first, second);
     }
 
     private final T entity;
@@ -127,6 +120,8 @@ public final class ExpressionInterpreter<T> implements ExpressionVisitor<Value>,
     private @Nullable Value returnValue;
 
     private boolean warnOnReflectiveFunctionUsage;
+    private int[] remainingIterations = new int[]{1048576};
+    private void iteration() { if (--remainingIterations[0]<0) throw new IllegalStateException("Molang evaluation loop budget exceeded"); }
 
     public ExpressionInterpreter(final @Nullable T entity, final @NotNull Scope scope) {
         this.entity = entity;
@@ -175,17 +170,20 @@ public final class ExpressionInterpreter<T> implements ExpressionVisitor<Value>,
 
     @Override
     public @NotNull Value eval(final @NotNull Expression expression) {
-        return expression.visit(this);
+        Value value = expression.visit(this);
+        if (expression instanceof ExecutionScopeExpression && value instanceof Function)
+            return RuntimeSemantics.value(((Function<T>)value).evaluate(this));
+        return RuntimeSemantics.value(value);
     }
 
     public <R> @NotNull ExpressionInterpreter<R> createChild(final @Nullable R entity) {
-        return new ExpressionInterpreter<>(entity, this.scope);
+        ExpressionInterpreter<R> child=new ExpressionInterpreter<>(entity,this.scope);child.remainingIterations=remainingIterations;return child;
     }
 
     public @NotNull ExpressionInterpreter<T> createChild() {
         // Note that it will have its own returnValue, but same bindings
         // (Should we create new bindings?)
-        return new ExpressionInterpreter<>(this.entity, this.scope);
+        return createChild(this.entity);
     }
 
     public @NotNull Scope bindings() {
@@ -200,24 +198,32 @@ public final class ExpressionInterpreter<T> implements ExpressionVisitor<Value>,
 
     @Override
     public @NotNull Value visitArrayAccess(final @NotNull ArrayAccessExpression expression) {
-        final Value array = expression.array().visit(this);
-        final Value index = expression.index().visit(this);
-        if (!(array instanceof ArrayValue)) {
-            return Value.nil();
-        } else {
-            final Value[] values = ((ArrayValue) array).values();
-            final int validIndex = Math.max(0, (int) index.getAsNumber()) % values.length;
-            return values[validIndex];
-        }
+        return RuntimeSemantics.array(expression.array().visit(this), expression.index().visit(this));
     }
 
     @Override
     public @NotNull Value visitAccess(final @NotNull AccessExpression expression) {
-        final Value objectValue = expression.object().visit(this);
-        if (objectValue instanceof ObjectValue) {
-            return ((ObjectValue) objectValue).get(expression.property());
+        return RuntimeSemantics.property(expression.object().visit(this), expression.property());
+    }
+
+    private void assignTarget(Expression target,Value value) {
+        if(target instanceof BinaryExpression && ((BinaryExpression)target).op()==BinaryExpression.Op.ARROW){
+            BinaryExpression a=(BinaryExpression)target;Value reference=a.left().visit(this);Object actor=RuntimeSemantics.actor(reference);
+            if(actor!=null)new ExpressionInterpreter<>(actor,RuntimeSemantics.actorScope(reference,scope)).assignTarget(a.right(),value);
+        } else if(target instanceof AccessExpression){
+            AccessExpression a=(AccessExpression)target;Expression root=a;
+            while(root instanceof AccessExpression)root=((AccessExpression)root).object();
+            if(root instanceof IdentifierExpression && ( ((IdentifierExpression)root).name().equals("context") || ((IdentifierExpression)root).name().equals("c")))return;
+            RuntimeSemantics.assign(assignmentObject(a.object()),a.property(),value);
         }
-        return NumberValue.zero();
+    }
+
+    private Value assignmentObject(Expression expression) {
+        if (expression instanceof AccessExpression) {
+            AccessExpression access = (AccessExpression) expression;
+            return RuntimeSemantics.struct(assignmentObject(access.object()), access.property());
+        }
+        return expression.visit(this);
     }
 
     @Override
@@ -237,21 +243,14 @@ public final class ExpressionInterpreter<T> implements ExpressionVisitor<Value>,
                 // Parameters:
                 // - double:           How many times should we loop
                 // - CallableBinding:  The looped expressions
-                int n = Math.round((float) args.next().eval().getAsNumber());
-                Value expr = args.next().eval();
-
-                if (expr instanceof Function) {
-                    final Function<T> callable = (Function<T>) expr;
-                    for (int i = 0; i < n; i++) {
-                        final ExpressionInterpreter<T> evaluatorThisCall = createChild();
-                        callable.evaluate(evaluatorThisCall);
-                        if (evaluatorThisCall.flag() == StatementExpression.Op.BREAK) {
-                            break;
-                        }
-                        // (not necessary, callable already exits when returnValue
-                        //  is set to any non-null value)
-                        // if (value == StatementExpression.Op.CONTINUE) continue;
-                    }
+                int n = RuntimeSemantics.loopCount(args.next().eval().getAsNumber());
+                Expression body = args.next().expression();
+                for (int i=0; i<n; i++) {
+                    iteration();
+                    ExpressionInterpreter<T> child=createChild();
+                    child.eval(body);
+                    if(child.returnValue!=null) { returnValue=child.returnValue; break; }
+                    if(child.flag()==StatementExpression.Op.BREAK) break;
                 }
                 return NumberValue.zero();
             } else if ("for_each".equals(identifierName)) {
@@ -280,23 +279,14 @@ public final class ExpressionInterpreter<T> implements ExpressionVisitor<Value>,
                     return NumberValue.zero();
                 }
 
-                final Value expr = args.next().eval();
-
-                if (expr instanceof Function) {
-                    final Function callable = (Function) expr;
-                    for (final Value val : arrayIterable) {
-                        // set 'val' as current value
-                        // eval (objectExpr.propertyName = val)
-                        final Value evaluatedObjectValue = this.eval(objectExpr);
-                        if (evaluatedObjectValue instanceof MutableObjectBinding) {
-                            ((MutableObjectBinding) evaluatedObjectValue).set(propertyName, val);
-                        }
-                        final Object returnValue = callable.evaluate(this);
-
-                        if (returnValue == StatementExpression.Op.BREAK) {
-                            break;
-                        }
-                    }
+                Expression body=args.next().expression();
+                for(Value val:arrayIterable) {
+                    iteration();
+                    assignTarget(variableExpr,val);
+                    ExpressionInterpreter<T> child=createChild();
+                    child.eval(body);
+                    if(child.returnValue!=null) { returnValue=child.returnValue; break; }
+                    if(child.flag()==StatementExpression.Op.BREAK) break;
                 }
                 return NumberValue.zero();
             }
@@ -312,7 +302,7 @@ public final class ExpressionInterpreter<T> implements ExpressionVisitor<Value>,
             System.err.println("Warning: Reflective function usage detected for method: " + javaFunction.method());
         }
 
-        return ((Function<T>) function).evaluate(this, args);
+        return RuntimeSemantics.value(((Function<T>) function).evaluate(this, args));
     }
 
     @Override
@@ -329,7 +319,8 @@ public final class ExpressionInterpreter<T> implements ExpressionVisitor<Value>,
                 context.eval(expression);
 
                 // check for return values
-                if (context.flag() != null) {
+                if (context.flag() != null || (context instanceof ExpressionInterpreter<?>
+                        && ((ExpressionInterpreter<?>) context).returnValue != null)) {
                     break;
                 }
             }
@@ -339,7 +330,7 @@ public final class ExpressionInterpreter<T> implements ExpressionVisitor<Value>,
 
     @Override
     public @NotNull Value visitIdentifier(final @NotNull IdentifierExpression expression) {
-        return scope.get(expression.name());
+        return RuntimeSemantics.lookup(scope,expression.name());
     }
 
     @Override
@@ -391,9 +382,15 @@ public final class ExpressionInterpreter<T> implements ExpressionVisitor<Value>,
     @Override
     public @NotNull Value visitTernaryConditional(@NotNull TernaryConditionalExpression expression) {
         final Value conditionResult = expression.condition().visit(this);
-        return conditionResult.getAsBoolean()
-                ? expression.trueExpression().visit(this)
-                : expression.falseExpression().visit(this);
+        final Expression branch = conditionResult.getAsBoolean()
+                ? expression.trueExpression() : expression.falseExpression();
+        final Value value = branch.visit(this);
+        // Braced branches are execution scopes, not function references. Execute only the
+        // selected block; ordinary value/function-reference branches retain their value semantics.
+        if (branch instanceof ExecutionScopeExpression && value instanceof Function<?>) {
+            return ((Function<T>) value).evaluate(this);
+        }
+        return value;
     }
 
     @Override

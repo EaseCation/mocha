@@ -34,7 +34,9 @@ import java.util.StringJoiner;
 @ApiStatus.NonExtendable
 public /* sealed */ interface Value /* permits Function, ObjectValue, ArrayValue, NumberValue, StringValue */ {
     static @NotNull Value of(final @Nullable Object any) {
-        if (any instanceof Value) {
+        if (any == null) {
+            return nil();
+        } else if (any instanceof Value) {
             return (Value) any;
         } else if (any instanceof Number) {
             return NumberValue.of(((Number) any).doubleValue());
@@ -70,7 +72,14 @@ public /* sealed */ interface Value /* permits Function, ObjectValue, ArrayValue
     }
 
     static @NotNull Value nil() {
-        return NumberValue.zero();
+        return NilValue.INSTANCE;
+    }
+
+    /** Whether this value is absent. Numeric zero, false, and empty strings are present values.
+     * Mutable host bindings may override this without allocating a replacement value.
+     */
+    default boolean isNil() {
+        return false;
     }
 
     default double getAsNumber() {

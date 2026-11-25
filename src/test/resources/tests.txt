@@ -32,13 +32,13 @@ temp.test = 4; return temp.test; return 5;
 math.pow(math.clamp(500, 0, 3), 2)
 
 # lerp rotate
-math.lerprotate(10, 380, 0.5) + math.lerprotate(50, -10, 0.25)
+# Reversed lerprotate endpoints are tested against the official contract in OfficialMathTest; the legacy MolangJS oracle sorts them incorrectly.
 
 # inverse trigonometry
 math.round(math.acos(-1) + math.atan2(2, 4))
 
 # pixel case
-temp.level = 10; 10 * temp.level + (temp.level * temp.level * 4)
+temp.level = 10; return 10 * temp.level + (temp.level * temp.level * 4);
 
 # eq, neq
 5 == 3
